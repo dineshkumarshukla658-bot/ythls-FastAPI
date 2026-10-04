@@ -25,14 +25,10 @@ def get_stream(id: str):
         raise HTTPException(status_code=400, detail="YouTube ID required")
     
     # -------------------------------------------------------------
-    # METHOD 1: Piped API (Bypasses YouTube IP Blocks on Render)
+    # METHOD 1: Piped API (Bypasses YouTube IP Blocks)
     # -------------------------------------------------------------
     try:
         piped_url = f"https://pipedapi.kavin.rocks/streams/{id}"
-        # Alternative Piped API instances if one is down:
-        # https://pipedapi.in.projectsegfau.lt/streams/{id}
-        # https://de.api.piped.yt/streams/{id}
-        
         res = requests.get(piped_url, timeout=8)
         if res.status_code == 200:
             data = res.json()
@@ -43,18 +39,19 @@ def get_stream(id: str):
                     if stream.get("videoOnly") == False and stream.get("mimeType") == "video/mp4":
                         return {"success": True, "streamUrl": stream["url"], "source": "piped"}
                 
-                # Agar combined na mile, toh list ki sabse aakhri stream (best quality) bhej do
                 return {"success": True, "streamUrl": video_streams[-1]["url"], "source": "piped-fallback"}
     except Exception as e:
         print(f"Piped API failed: {e}")
-        pass # Agar Piped fail ho jaye, toh next method (yt-dlp) par jao
+        pass # Agar Piped fail ho jaye, toh yt-dlp par jao
 
     # -------------------------------------------------------------
-    # METHOD 2: Standard yt-dlp (Agar IP blocked nahi hai)
+    # METHOD 2: Standard yt-dlp (Fixed Format for Render)
     # -------------------------------------------------------------
     video_url = f"https://www.youtube.com/watch?v={id}"
+    
+    # YAHAN CHANGE KIYA HAI: 'b' ka matlab best pre-merged video+audio format
     ydl_opts = {
-        'format': 'best[ext=mp4]/best',
+        'format': 'b', 
         'quiet': True,
         'no_warnings': True,
     }
@@ -67,7 +64,7 @@ def get_stream(id: str):
                 raise HTTPException(status_code=404, detail="Stream URL not found")
             return {"success": True, "streamUrl": stream_url, "source": "yt-dlp"}
     except Exception as e:
-        # Agar dono method fail ho jayein toh fallback dummy video bhej do taaki frontend crash na ho
+        # Fallback taaki app crash na ho
         fallback_dummy = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
         return {"success": True, "streamUrl": fallback_dummy, "source": "dummy-fallback", "error_log": str(e)}
 
