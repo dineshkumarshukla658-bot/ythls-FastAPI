@@ -6,7 +6,6 @@ import os
 
 app = FastAPI(title="YTHLS Trailer Stream Engine")
 
-# Smart TV aur Browser ke liye CORS allow karna zaroori hai
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,7 +16,7 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"status": "online", "message": "YTHLS FastAPI is running with Smart Fallback"}
+    return {"status": "online", "message": "YTHLS FastAPI is running with Multi-Server Fallback"}
 
 @app.get("/api/stream")
 def get_stream(id: str):
@@ -25,46 +24,44 @@ def get_stream(id: str):
         raise HTTPException(status_code=400, detail="YouTube ID required")
     
     # -------------------------------------------------------------
-    # METHOD 1: Piped API (Bypasses YouTube IP Blocks)
+    # METHOD 1: Multi-Piped API Fallback (Bypasses YouTube Blocks)
     # -------------------------------------------------------------
-    try:
-        piped_url = f"https://pipedapi.kavin.rocks/streams/{id}"
-        res = requests.get(piped_url, timeout=8)
-        if res.status_code == 200:
-            data = res.json()
-            video_streams = data.get("videoStreams", [])
-            if video_streams:
-                # 720p ya 1080p MP4 stream nikalna jisme audio aur video dono ho
+    piped_instances = [
+        "https://pipedapi.smnz.de",
+        "https://pipedapi.in.projectsegfau.lt",
+        "https://pipedapi.privacy.com.de"
+    ]
+    
+    for base_url in piped_instances:
+        try:
+            res = requests.get(f"{base_url}/streams/{id}", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                video_streams = data.get("videoStreams", [])
                 for stream in video_streams:
-                    if stream.get("videoOnly") == False and stream.get("mimeType") == "video/mp4":
-                        return {"success": True, "streamUrl": stream["url"], "source": "piped"}
-                
-                return {"success": True, "streamUrl": video_streams[-1]["url"], "source": "piped-fallback"}
-    except Exception as e:
-        print(f"Piped API failed: {e}")
-        pass # Agar Piped fail ho jaye, toh yt-dlp par jao
+                    # Sirf wo format chahiye jisme Audio aur Video pehle se mix ho
+                    if not stream.get("videoOnly") and stream.get("mimeType") == "video/mp4":
+                        return {"success": True, "streamUrl": stream["url"], "source": f"piped-{base_url}"}
+        except:
+            continue # Agar ek Piped fail ho toh doosre par jao
 
     # -------------------------------------------------------------
-    # METHOD 2: Standard yt-dlp (Fixed Format for Render)
+    # METHOD 2: Strict yt-dlp Fallback
     # -------------------------------------------------------------
-    video_url = f"https://www.youtube.com/watch?v={id}"
-    
-    # YAHAN CHANGE KIYA HAI: 'b' ka matlab best pre-merged video+audio format
+    # 18 = 360p MP4 (Video+Audio), 22 = 720p MP4 (Video+Audio), b = Best Pre-merged
     ydl_opts = {
-        'format': 'b', 
+        'format': '18/22/b', 
         'quiet': True,
         'no_warnings': True,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={id}", download=False)
             stream_url = info.get('url')
-            if not stream_url:
-                raise HTTPException(status_code=404, detail="Stream URL not found")
-            return {"success": True, "streamUrl": stream_url, "source": "yt-dlp"}
+            if stream_url:
+                return {"success": True, "streamUrl": stream_url, "source": "yt-dlp"}
     except Exception as e:
-        # Fallback taaki app crash na ho
         fallback_dummy = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
         return {"success": True, "streamUrl": fallback_dummy, "source": "dummy-fallback", "error_log": str(e)}
 
