@@ -1,11 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import yt_dlp
 import requests
 import os
 
 app = FastAPI(title="YTHLS Trailer Stream Engine")
 
+# Smart TV aur Browser ke liye CORS allow karna zaroori hai
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +16,7 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {"status": "online", "message": "YTHLS FastAPI is running with Multi-Server Fallback"}
+    return {"status": "online", "message": "API is running (Invidious Engine)"}
 
 @app.get("/api/stream")
 def get_stream(id: str):
@@ -24,46 +24,39 @@ def get_stream(id: str):
         raise HTTPException(status_code=400, detail="YouTube ID required")
     
     # -------------------------------------------------------------
-    # METHOD 1: Multi-Piped API Fallback (Bypasses YouTube Blocks)
+    # THE ULTIMATE FIX: Invidious API Network (No yt-dlp needed)
     # -------------------------------------------------------------
-    piped_instances = [
-        "https://pipedapi.smnz.de",
-        "https://pipedapi.in.projectsegfau.lt",
-        "https://pipedapi.privacy.com.de"
+    invidious_instances = [
+        "https://inv.tux.pizza",
+        "https://invidious.jing.rocks",
+        "https://invidious.nerdvpn.de",
+        "https://invidious.slipfox.xyz",
+        "https://invidious.protokolla.fi"
     ]
     
-    for base_url in piped_instances:
+    for base_url in invidious_instances:
         try:
-            res = requests.get(f"{base_url}/streams/{id}", timeout=5)
+            # API ko call karke video details mangwao
+            res = requests.get(f"{base_url}/api/v1/videos/{id}", timeout=6)
             if res.status_code == 200:
                 data = res.json()
-                video_streams = data.get("videoStreams", [])
-                for stream in video_streams:
-                    # Sirf wo format chahiye jisme Audio aur Video pehle se mix ho
-                    if not stream.get("videoOnly") and stream.get("mimeType") == "video/mp4":
-                        return {"success": True, "streamUrl": stream["url"], "source": f"piped-{base_url}"}
-        except:
-            continue # Agar ek Piped fail ho toh doosre par jao
-
-    # -------------------------------------------------------------
-    # METHOD 2: Strict yt-dlp Fallback
-    # -------------------------------------------------------------
-    # 18 = 360p MP4 (Video+Audio), 22 = 720p MP4 (Video+Audio), b = Best Pre-merged
-    ydl_opts = {
-        'format': '18/22/b', 
-        'quiet': True,
-        'no_warnings': True,
-    }
+                
+                # formatStreams ke andar pre-merged (Audio+Video) MP4 files hoti hain
+                format_streams = data.get("formatStreams", [])
+                if format_streams:
+                    # 720p ya 360p best MP4 stream dhoondho
+                    for stream in format_streams:
+                        if stream.get("container") == "mp4":
+                            return {"success": True, "streamUrl": stream["url"], "source": f"invidious-{base_url}"}
+                    
+                    # Agar specifically mp4 tag na mile toh pehla stream return kar do
+                    return {"success": True, "streamUrl": format_streams[0]["url"], "source": f"invidious-fallback-{base_url}"}
+        except Exception as e:
+            continue # Agar ek Invidious server down ho, toh agle par try karo
     
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={id}", download=False)
-            stream_url = info.get('url')
-            if stream_url:
-                return {"success": True, "streamUrl": stream_url, "source": "yt-dlp"}
-    except Exception as e:
-        fallback_dummy = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-        return {"success": True, "streamUrl": fallback_dummy, "source": "dummy-fallback", "error_log": str(e)}
+    # Agar kisi bhi wajah se saare Invidious servers fail ho jayein (jo ki rare hai)
+    fallback_dummy = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
+    return {"success": True, "streamUrl": fallback_dummy, "source": "dummy-fallback", "error_log": "All APIs failed"}
 
 if __name__ == "__main__":
     import uvicorn
